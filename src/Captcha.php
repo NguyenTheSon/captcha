@@ -20,6 +20,7 @@ use Illuminate\Hashing\BcryptHasher as Hasher;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Http\File;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 use Intervention\Image\Gd\Font;
 use Intervention\Image\Image;
 use Intervention\Image\ImageManager;
@@ -298,7 +299,9 @@ class Captcha
             $this->image->blur($this->blur);
         }
 
-        Cache::put($this->get_cache_key($generator['key']), $generator['value'], $this->expire);
+        if ($api) {
+            Cache::put($this->get_cache_key($generator['key']), $generator['value'], $this->expire);
+        }
 
         return $api ? [
             'sensitive' => $generator['sensitive'],
@@ -346,11 +349,13 @@ class Captcha
         $hash = $this->hasher->make($key);
         if($this->encrypt) $hash = Crypt::encrypt($hash);
 
-        $this->session->put('captcha', [
+        Cache::put($this->get_cache_key($key), [
             'sensitive' => $this->sensitive,
             'key' => $hash,
             'encrypt' => $this->encrypt
-        ]);
+        ], $this->expire);
+        Log::info("Key is: ".$key);
+        Log::info("Hash is: ".$hash);
 
         return [
             'value' => $bag,
@@ -468,18 +473,15 @@ class Captcha
      */
     public function check(string $value): bool
     {
-        if (!$this->session->has('captcha')) {
-            return false;
-        }
+        $captcha = Cache::pull($this->get_cache_key($value));
+        Log::info("Captcha exist is: ".$value);
+        Log::info("Encode is: ".json_encode($captcha));
+        if (!$captcha) return false;
+        Log::info("Captcha hash exist is: ".$captcha['key']);
 
-        $key = $this->session->get('captcha.key');
-        $sensitive = $this->session->get('captcha.sensitive');
-        $encrypt = $this->session->get('captcha.encrypt');
-
-        if (!Cache::pull($this->get_cache_key($key))) {
-            $this->session->remove('captcha');
-            return false;
-        }
+        $key = $captcha['key'];
+        $sensitive = $captcha['sensitive'];
+        $encrypt = $captcha['encrypt'];
 
         if (!$sensitive) {
             $value = $this->str->lower($value);
@@ -487,10 +489,6 @@ class Captcha
 
         if($encrypt) $key = Crypt::decrypt($key);
         $check = $this->hasher->check($value, $key);
-        // if verify pass,remove session
-        if ($check) {
-            $this->session->remove('captcha');
-        }
 
         return $check;
     }
