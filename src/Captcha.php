@@ -473,7 +473,7 @@ class Captcha
      */
     public function check(string $value): bool
     {
-        $captcha = Cache::pull($this->get_cache_key($value));
+        $captcha = Cache::get($this->get_cache_key($value));
         Log::info("Captcha exist is: ".$value);
         Log::info("Encode is: ".json_encode($captcha));
         if (!$captcha) return false;
